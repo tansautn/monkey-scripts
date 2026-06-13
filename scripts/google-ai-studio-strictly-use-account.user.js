@@ -8,7 +8,8 @@
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=aistudio.google.com
 // @grant        none
 // @run-at       document-idle
-// @update-url   https://github.com/tansautn/monkey-scripts/raw/main/scripts/google-ai-studio-strictly-use-account.user.js
+// @updateURL   https://github.com/tansautn/monkey-scripts/raw/main/scripts/google-ai-studio-strictly-use-account.user.js
+// @downloadURL   https://github.com/tansautn/monkey-scripts/raw/main/scripts/google-ai-studio-strictly-use-account.user.js
 // ==/UserScript==
 
 (function() {
@@ -16,8 +17,8 @@
 
   // CẤU HÌNH SELECTOR (Dựa trên mô tả của bạn & cấu trúc thường thấy)
   const SELECTORS = {
-    avatarBtn: '#account-switcher-button', // Nút avatar
-    popover: '#account-switcher',          // Dialog bung ra
+    avatarBtn: '#account-switcher-button',
+    popover: '#account-switcher',
     cssSwBtnMustHave: ".switch-account-button",
     switchBtnLbl: "Switch account",
     instantButton: '.account-switcher-container button',
@@ -84,13 +85,13 @@
         const buttons = popover.querySelectorAll('button');
         if (buttons && buttons.length) {
           for (let i=0;i<buttons.length;i++){
-          const targetBtn = buttons[i];
-          if(!targetBtn.matches(SELECTORS.cssSwBtnMustHave)){
-            console.warn("Không khớp, bỏ qua ", targetBtn.textContent);
-            return;
-          }
-          console.log("👉 Click nút nhắc nhở: ", targetBtn.textContent);
-          targetBtn.click();
+            const targetBtn = buttons[i];
+            if(!targetBtn.matches(SELECTORS.cssSwBtnMustHave)){
+              console.warn("Không khớp, bỏ qua ", targetBtn.textContent);
+              return;
+            }
+            console.log("👉 Click nút nhắc nhở: ", targetBtn.textContent);
+            targetBtn.click();
           }
         } else {
           console.error("❌ Không tìm thấy nút trong popover tại index", SELECTORS.switchBtnIndex);
