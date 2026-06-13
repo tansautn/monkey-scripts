@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Force Google AI Studio Account Selection
 // @namespace    https://zuko.pro/
-// @version      1.3
-// @description  Bắt buộc chọn tài khoản (khác /u/0) trên AI Studio. Tự động mở menu chuyển tài khoản nếu chưa chỉ định tài khoản nào (mặc định).
+// @version      1.3.1
+// @description  Bắt buộc chọn tài khoản (phải có /u/12356790 trong uri) trên AI Studio. Tự động mở menu chuyển tài khoản nếu chưa chỉ định tài khoản nào (mặc định).
 // @author       Zuko
 // @match        https://aistudio.google.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=aistudio.google.com
@@ -86,9 +86,10 @@
         if (buttons && buttons.length) {
           for (let i=0;i<buttons.length;i++){
             const targetBtn = buttons[i];
+            console.log(i, targetBtn);
             if(!targetBtn.matches(SELECTORS.cssSwBtnMustHave)){
               console.warn("Không khớp, bỏ qua ", targetBtn.textContent);
-              return;
+              continue;
             }
             console.log("👉 Click nút nhắc nhở: ", targetBtn.textContent);
             targetBtn.click();
