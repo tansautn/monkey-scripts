@@ -16,7 +16,7 @@
 // ==UserScript==
 // @name         Claude.ai Tweaks
 // @namespace    https://zuko.pro
-// @version      1.4.1
+// @version      1.4.2
 // @description  Full-wide (chat + code), sticky sidebar, sidebar links same-tab, Code titlebar tweaks, GitHub menu enhancements with OS-level default browser open
 // @author       Zuko <tansautn@gmail.com>
 // @match        https://claude.ai/*
@@ -31,6 +31,7 @@
 // ==/UserScript==
 
 // -:- -:- -:-   C H A N G E   L O G   -:- -:- -:-
+// 1.4.2: Fix openwith:// handler reg file
 // 1.4.1: Menu command to download Windows .reg installer for openwith:// handler
 // 1.4.0: OS-level default browser open via custom protocol handler
 // 1.3.0: Full-wide /code page + GitHub menu enhancements
@@ -156,14 +157,17 @@
 
   // ── GitHub menu ─────────────────────────────────────────────────────────
   function enhanceGithubMenu() {
-    document.querySelectorAll('a[href*="://github.com/"]:not([data-gh-tweaked])').forEach(a => {
-      a.dataset.ghTweaked = '1';
-      a.addEventListener('click', e => {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        openExternal(a.href);
-      }, true);
-    });
+    document
+  .querySelector('nav[aria-label="Repository and pull request controls"]')
+  ?.querySelectorAll('a[href*="://github.com/"]:not([data-gh-tweaked])')
+  .forEach(a => {
+    a.dataset.ghTweaked = '1';
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      openExternal(a.href);
+    }, true);
+  });
 
     document.querySelectorAll('[role="menuitem"]').forEach(item => {
       if (item.nextElementSibling?.dataset.ghCopyClone === '1') return;

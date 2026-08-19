@@ -3,4 +3,4 @@ Windows Registry Editor Version 5.00
 "URL Protocol"=""
 @="URL:Open With Default Browser"
 [HKEY_CLASSES_ROOT\openwith\shell\open\command]
-@="cmd /c start \"\" \"%1\""
+@="powershell -NoProfile -WindowStyle Hidden -Command \"$u=[uri]::UnescapeDataString(('%1' -replace '^openwith://',''));Start-Process $u\""
