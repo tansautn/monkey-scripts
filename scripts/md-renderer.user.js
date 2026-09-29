@@ -16,10 +16,12 @@
 // ==UserScript==
 // @name         Markdown Renderer (GitHub-style + Mermaid)
 // @namespace    https://zuko.pro
-// @version      2.0.0
-// @description  Render raw .md files in browser — GitHub-style markdown, Mermaid diagrams, syntax highlight
+// @version      2.2.0
+// @description  Render raw .md files in browser — GitHub-style markdown, Mermaid diagrams, syntax highlight, copy buttons
 // @author       Zuko <tansautn@gmail.com>
 // @icon         https://cdn.zuko.pro/assets/z-cricle.png
+// @updateURL    https://raw.githubusercontent.com/tansautn/monkey-scripts/refs/heads/main/scripts/md-renderer.user.js
+// @downloadURL  https://raw.githubusercontent.com/tansautn/monkey-scripts/refs/heads/main/scripts/md-renderer.user.js
 // @match        file://*/*.md
 // @match        file://*/*.md?*
 // @match        file://*/*.markdown
@@ -153,16 +155,25 @@
       const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
       try {
         const { svg } = await mermaid.render(id, diagram);
-        const wrapper = createDiagramViewer(svg, i);
+        const wrapper = createDiagramViewer(svg, i, diagram);
         preEl.replaceWith(wrapper);
       } catch (err) {
         log.error('mermaid', `block[${i}] FAILED`, err.message);
-        preEl.innerHTML = `<div class="mermaid-error">Mermaid error:\n${err.message}</div>`;
+        const errWrap = document.createElement('div');
+        errWrap.className = 'mermaid-error-wrap';
+        errWrap.innerHTML = `
+          <div class="mermaid-error">Mermaid error:\n${escapeHtml(err.message || String(err))}</div>
+          <div class="mermaid-error-source-label">Source (raw mermaid):</div>
+          <pre><code class="language-mermaid">${escapeHtml(diagram)}</code></pre>
+        `;
+        preEl.replaceWith(errWrap);
+        const srcCode = errWrap.querySelector('pre code');
+        if (srcCode && typeof hljs !== 'undefined') { try { hljs.highlightElement(srcCode); } catch (_) {} }
       }
     }
   }
 
-  function createDiagramViewer(svgHtml, index) {
+  function createDiagramViewer(svgHtml, index, sourceText) {
     const wrapper = document.createElement('div');
     wrapper.className = 'diagram-viewer';
 
@@ -175,6 +186,10 @@
       <span class="diagram-zoom-label">100%</span>
       <button data-action="zoom-in" title="Zoom in (+5%)">+</button>
       <button data-action="hand" title="Pan mode" class="diagram-hand-btn">☝</button>
+      <span class="diagram-sep"></span>
+      <button data-action="copy-src" title="Copy mermaid source">⧉ Source</button>
+      <button data-action="copy-svg" title="Copy SVG markup">⧉ SVG</button>
+      <button data-action="copy-png" title="Copy as PNG image">⧉ PNG</button>
     `;
 
     const viewport = document.createElement('div');
@@ -244,6 +259,22 @@
         handBtn.classList.toggle('active', isPanning);
         viewport.style.cursor = isPanning ? 'grab' : '';
       }
+      else if (action === 'copy-src') {
+        copyText(sourceText || '').then(ok => flashBtn(btn, ok ? '✓ Copied' : '✗ Failed', '⧉ Source'));
+      }
+      else if (action === 'copy-svg') {
+        const svgEl = content.querySelector('svg');
+        const svgStr = svgEl ? serializeSvg(svgEl) : '';
+        copyText(svgStr).then(ok => flashBtn(btn, ok ? '✓ Copied' : '✗ Failed', '⧉ SVG'));
+      }
+      else if (action === 'copy-png') {
+        const svgEl = content.querySelector('svg');
+        if (!svgEl) { flashBtn(btn, '✗ No SVG', '⧉ PNG'); return; }
+        svgToPngBlob(svgEl, naturalW, naturalH)
+          .then(blob => copyBlob(blob, 'image/png'))
+          .then(ok => flashBtn(btn, ok ? '✓ Copied' : '✗ Failed', '⧉ PNG'))
+          .catch(err => { log.error('copy-png', err.message); flashBtn(btn, '✗ Failed', '⧉ PNG'); });
+      }
     });
 
     viewport.addEventListener('mousedown', e => {
@@ -291,6 +322,7 @@
   function getRawText() {
     const pre = document.body.querySelector('pre');
     if (pre && document.body.children.length === 1) return pre.innerText;
+    if(document.body.children.length > 1) return document.body.innerHTML;
     return document.body.innerText;
   }
 
@@ -380,7 +412,10 @@
       // Step 4: render mermaid diagrams (replaces <pre><code class="language-mermaid">)
       await renderMermaidBlocks(article, darkMode);
 
-      // Step 5: lazyload images — reload with proper attributes
+      // Step 5: copy buttons on every remaining <pre><code>
+      addCopyButtons(article);
+
+      // Step 6: lazyload images — reload with proper attributes
       lazyloadImages(article);
 
       storedRenderedHtml = article.innerHTML;
@@ -426,6 +461,97 @@
 
   function escapeHtml(text) {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (_) { /* fall through */ }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (_) { return false; }
+  }
+
+  async function copyBlob(blob, mime) {
+    try {
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([new ClipboardItem({ [mime]: blob })]);
+        return true;
+      }
+    } catch (e) { log.warn('copyBlob', e.message); }
+    return false;
+  }
+
+  function serializeSvg(svgEl) {
+    const clone = svgEl.cloneNode(true);
+    if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    if (!clone.getAttribute('xmlns:xlink')) clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    return new XMLSerializer().serializeToString(clone);
+  }
+
+  function svgToPngBlob(svgEl, w, h) {
+    return new Promise((resolve, reject) => {
+      const scale = 2; // retina
+      const svgStr = serializeSvg(svgEl);
+      const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(w * scale));
+          canvas.height = Math.max(1, Math.round(h * scale));
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(url);
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob returned null')), 'image/png');
+        } catch (e) { URL.revokeObjectURL(url); reject(e); }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('SVG image load failed')); };
+      img.src = url;
+    });
+  }
+
+  function flashBtn(btn, msg, restore) {
+    const old = btn.textContent;
+    btn.textContent = msg;
+    btn.classList.add('flash');
+    setTimeout(() => { btn.textContent = restore || old; btn.classList.remove('flash'); }, 1200);
+  }
+
+  function addCopyButtons(container) {
+    const pres = container.querySelectorAll('pre');
+    let n = 0;
+    pres.forEach(pre => {
+      if (pre.querySelector(':scope > .code-copy-btn')) return;
+      const code = pre.querySelector('code');
+      if (!code) return;
+      pre.classList.add('has-copy-btn');
+      const btn = document.createElement('button');
+      btn.className = 'code-copy-btn';
+      btn.type = 'button';
+      btn.title = 'Copy code';
+      btn.textContent = '⧉ Copy';
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        copyText(code.textContent || '').then(ok => flashBtn(btn, ok ? '✓ Copied' : '✗ Failed', '⧉ Copy'));
+      });
+      pre.appendChild(btn);
+      n++;
+    });
+    if (n > 0) log.info('copy-btn', `${n} block(s) instrumented`);
   }
 
   function lazyloadImages(container) {
@@ -548,6 +674,46 @@
         font-size: 12px;
         white-space: pre-wrap;
       }
+      .mermaid-error-wrap { margin: 16px 0; }
+      .mermaid-error-source-label {
+        margin-top: 8px;
+        font-size: 12px;
+        color: ${mutedText};
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .diagram-sep {
+        display: inline-block;
+        width: 1px;
+        height: 16px;
+        background: ${border};
+        margin: 0 4px;
+      }
+
+      pre.has-copy-btn { position: relative; }
+      .code-copy-btn {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        background: ${codeBg};
+        border: 1px solid ${border};
+        border-radius: 4px;
+        color: ${mutedText};
+        cursor: pointer;
+        padding: 2px 8px;
+        font-size: 11px;
+        line-height: 1.5;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        opacity: 0;
+        transition: opacity 0.15s;
+        z-index: 2;
+      }
+      pre.has-copy-btn:hover .code-copy-btn,
+      .code-copy-btn:focus,
+      .code-copy-btn.flash { opacity: 1; }
+      .code-copy-btn:hover { color: ${link}; border-color: ${link}; }
+      .code-copy-btn.flash { color: ${link}; border-color: ${link}; }
+      .diagram-toolbar button.flash { color: ${link}; border-color: ${link}; }
 
       .task-list-item { list-style: none; margin-left: -20px; }
 
