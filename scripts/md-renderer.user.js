@@ -16,7 +16,7 @@
 // ==UserScript==
 // @name         Markdown Renderer (GitHub-style + Mermaid)
 // @namespace    https://zuko.pro
-// @version      2.2.0
+// @version      2.3.2
 // @description  Render raw .md files in browser — GitHub-style markdown, Mermaid diagrams, syntax highlight, copy buttons
 // @author       Zuko <tansautn@gmail.com>
 // @icon         https://cdn.zuko.pro/assets/z-cricle.png
@@ -315,14 +315,18 @@
     const rawHosts = ['raw.githubusercontent.com', 'gist.githubusercontent.com'];
     if (rawHosts.some(h => location.hostname === h)) return true;
     if (location.hostname === 'pastebin.com' && location.href.includes('/raw/')) return true;
-    if (/\.(md|markdown)$/i.test(location.pathname)) return true;
+    if (/\.(md|markdown|mdc)$/i.test(location.pathname)) return true;
     return false;
+  }
+
+  function unescapeHTML(str) {
+    return str.stripTags().replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
   }
 
   function getRawText() {
     const pre = document.body.querySelector('pre');
     if (pre && document.body.children.length === 1) return pre.innerText;
-    if(document.body.children.length > 1) return document.body.innerHTML;
+    if(document.body.children.length > 1) return unescapeHTML(document.body.innerHTML);
     return document.body.innerText;
   }
 
@@ -377,7 +381,7 @@
 
     document.body.innerHTML = `
       <div id="md-source-bar">
-        <span>📄 MD Renderer</span>
+        <span><img src="https://cdn.zuko.pro/assets/z-cricle.png" alt="Zuko" style="max-height: 12px;"/> MD Renderer</span>
         <span class="sep">·</span>
         <a href="#" id="md-raw-link">Raw</a>
         <span class="sep">·</span>
