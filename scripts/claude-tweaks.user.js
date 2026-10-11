@@ -16,8 +16,8 @@
 // ==UserScript==
 // @name         Claude.ai Tweaks
 // @namespace    https://zuko.pro
-// @version      1.4.2
-// @description  Full-wide (chat + code), sticky sidebar, sidebar links same-tab, Code titlebar tweaks, GitHub menu enhancements with OS-level default browser open
+// @version      1.5.0
+// @description  Full-wide (chat + code), sticky sidebar, sidebar links same-tab, Code titlebar tweaks, GitHub menu enhancements with OS-level default browser open, pinned section height cap
 // @author       Zuko <tansautn@gmail.com>
 // @match        https://claude.ai/*
 // @grant        GM_addStyle
@@ -31,6 +31,7 @@
 // ==/UserScript==
 
 // -:- -:- -:-   C H A N G E   L O G   -:- -:- -:-
+// 1.5.0: Pinned conversations height cap with configurable max-height
 // 1.4.2: Fix openwith:// handler reg file
 // 1.4.1: Menu command to download Windows .reg installer for openwith:// handler
 // 1.4.0: OS-level default browser open via custom protocol handler
@@ -41,9 +42,11 @@
   'use strict';
 
   // ── Config ──────────────────────────────────────────────────────────────
-  const DEFAULT_PROTOCOL = 'openwith://';
-  const REG_SCRIPT_URL   = 'https://raw.githubusercontent.com/tansautn/monkey-scripts/refs/heads/main/miscs/shell_register_openwith_proto.win64.reg';
-  let openProtocol = GM_getValue('openProtocol', DEFAULT_PROTOCOL);
+  const DEFAULT_PROTOCOL        = 'openwith://';
+  const DEFAULT_PINNED_MAX_H    = '40vh';   // ~40% viewport — fits ~10-12 items
+  const REG_SCRIPT_URL          = 'https://raw.githubusercontent.com/tansautn/monkey-scripts/refs/heads/main/miscs/shell_register_openwith_proto.win64.reg';
+  let openProtocol   = GM_getValue('openProtocol', DEFAULT_PROTOCOL);
+  let pinnedMaxH     = GM_getValue('pinnedMaxHeight', DEFAULT_PINNED_MAX_H);
 
   GM_registerMenuCommand('Set open-with protocol', () => {
     const next = prompt(
@@ -56,6 +59,21 @@
       openProtocol = next.trim();
       GM_setValue('openProtocol', openProtocol);
       alert(`Saved: "${openProtocol || '(disabled)'}"`);
+    }
+  });
+
+  GM_registerMenuCommand('Set pinned section max-height', () => {
+    const next = prompt(
+      'Max height for pinned conversations section.\n' +
+      'CSS value: 40vh, 300px, 50%, none (unlimited).\n' +
+      'Default: 40vh (~10-12 items visible)',
+      pinnedMaxH
+    );
+    if (next !== null) {
+      pinnedMaxH = next.trim() || DEFAULT_PINNED_MAX_H;
+      GM_setValue('pinnedMaxHeight', pinnedMaxH);
+      applyPinnedStyle();
+      alert(`Saved: "${pinnedMaxH}"`);
     }
   });
 
@@ -101,7 +119,37 @@
             max-width: none !important;
             width: 100% !important;
         }
+
+        /* Pinned section: scrollable cap */
+        [data-testid="sidebar-pinned"] {
+            max-height: var(--zt-pinned-max-h, 40vh) !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            flex-shrink: 0 !important;
+            scrollbar-width: thin;
+        }
+        [data-testid="sidebar-pinned"]::-webkit-scrollbar {
+            width: 4px;
+        }
+        [data-testid="sidebar-pinned"]::-webkit-scrollbar-thumb {
+            background: rgba(128,128,128,.35);
+            border-radius: 2px;
+        }
     `);
+
+  // Dynamic style for configurable max-height (re-applied on setting change)
+  let pinnedStyleEl;
+  function applyPinnedStyle() {
+    if (!pinnedStyleEl) {
+      pinnedStyleEl = document.createElement('style');
+      pinnedStyleEl.id = 'zt-pinned-cap';
+      document.head.appendChild(pinnedStyleEl);
+    }
+    const val = pinnedMaxH === 'none' ? 'none' : pinnedMaxH;
+    pinnedStyleEl.textContent =
+      `:root { --zt-pinned-max-h: ${val}; }`;
+  }
+  applyPinnedStyle();
 
   // ── Open URL in OS default browser via registered protocol handler ─────
   function openExternal(url) {
