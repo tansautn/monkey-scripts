@@ -16,7 +16,7 @@
 // ==UserScript==
 // @name         Markdown Renderer (GitHub-style + Mermaid)
 // @namespace    https://zuko.pro
-// @version      2.3.2
+// @version      2.4.0
 // @description  Render raw .md files in browser — GitHub-style markdown, Mermaid diagrams, syntax highlight, copy buttons
 // @author       Zuko <tansautn@gmail.com>
 // @icon         https://cdn.zuko.pro/assets/z-cricle.png
@@ -105,7 +105,54 @@
   // RENDERER — text-in → html-out
   // Libs loaded via @require → available as globals in userscript scope
   // ═══════════════════════════════════════════════════════════════════════════
+function parseFrontmatter(rawText) {
+    const match = rawText.match(/^-{3,}\n([\s\S]*?)\n-{3,}(\n|$)/);
+    if (!match || match.index !== 0) return { frontmatterHtml: '', markdownText: rawText };
 
+    const fmText = match[1];
+    const markdownText = rawText.substring(match[0].length);
+    const lines = fmText.split('\n');
+    const data = [];
+    let currentKey = null;
+
+    for (const line of lines) {
+      const kvMatch = line.match(/^([a-zA-Z0-9_-]+)\s*:\s*(.*)$/);
+      if (kvMatch) {
+        currentKey = kvMatch[1];
+        data.push({ key: currentKey, value: kvMatch[2] });
+      } else if (currentKey && data.length > 0) {
+        data[data.length - 1].value += '\n' + line;
+      } else {
+        currentKey = null;
+      }
+    }
+
+    if (data.length === 0) {
+      return {
+        frontmatterHtml: `<div class="frontmatter-container"><div class="frontmatter-header">Metadata</div><pre><code class="language-yaml">${escapeHtml(fmText)}</code></pre></div>`,
+        markdownText
+      };
+    }
+
+    const rows = data.map(item => `
+      <tr>
+        <th>${escapeHtml(item.key)}</th>
+        <td>${escapeHtml(item.value.trim()).replace(/\n/g, '<br>')}</td>
+      </tr>
+    `).join('');
+
+    const frontmatterHtml = `
+      <div class="frontmatter-container">
+        <div class="frontmatter-header">Metadata</div>
+        <table class="frontmatter-table">
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+
+    return { frontmatterHtml, markdownText };
+  }
+  
   function parseMarkdown(rawText) {
     log.group('renderer', 'parseMarkdown()');
     log.info('renderer', 'INPUT', {
@@ -120,13 +167,17 @@
 
     marked.setOptions({ gfm: true, breaks: false, pedantic: false });
 
+    const { frontmatterHtml, markdownText } = parseFrontmatter(rawText);
+
     log.time('marked:parse');
-    const html = marked.parse(rawText);
+    const html = marked.parse(markdownText);
     log.timeEnd('marked:parse');
 
-    log.info('renderer', 'OUTPUT', { htmlChars: html.length });
+    const finalHtml = frontmatterHtml + html;
+
+    log.info('renderer', 'OUTPUT', { htmlChars: finalHtml.length });
     log.groupEnd();
-    return html;
+    return finalHtml;
   }
 
   function highlightCodeBlocks(container) {
@@ -593,6 +644,44 @@
     const errBorder = darkMode ? '#7d2a2a' : '#ffb3b0';
 
     GM_addStyle(`
+      .frontmatter-container {
+        border: 1px solid ${border};
+        border-radius: 6px;
+        margin-bottom: 24px;
+        overflow: hidden;
+      }
+      .frontmatter-header {
+        background: ${barBg};
+        padding: 8px 16px;
+        font-size: 12px;
+        font-weight: 600;
+        color: ${mutedText};
+        border-bottom: 1px solid ${border};
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .frontmatter-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+        font-size: 12px;
+      }
+      .frontmatter-table th, .frontmatter-table td {
+        padding: 8px 16px;
+        border-bottom: 1px solid ${border};
+        text-align: left;
+        vertical-align: top;
+      }
+      .frontmatter-table tr:last-child th, .frontmatter-table tr:last-child td {
+        border-bottom: none;
+      }
+      .frontmatter-table th {
+        width: 150px;
+        color: ${mutedText};
+        white-space: nowrap;
+      }
+      .frontmatter-table td {
+        word-break: break-word;
+      }
       html { background: ${bg}; min-height: 100%; }
       body { margin: 0; background: ${bg}; }
 
