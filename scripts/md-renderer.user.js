@@ -16,7 +16,7 @@
 // ==UserScript==
 // @name         Everywhere Markdown Renderer (GitHub-style + Mermaid) | by Zuko
 // @namespace    https://zuko.pro
-// @version      2.5.0
+// @version      2.6.0
 // @description  Render raw .md files in browser — GitHub-style markdown, Mermaid diagrams, syntax highlight, copy buttons. Allow force render via Tampermonkey Context Command
 // @author       Zuko <tansautn@gmail.com>
 // @icon         https://cdn.zuko.pro/assets/z-cricle.png
@@ -432,6 +432,7 @@ function parseFrontmatter(rawText) {
     const toggle = document.getElementById('md-raw-link');
     if (!article || !toggle) return;
 
+    const toc = document.getElementById('md-toc-nav');
     if (viewMode === 'rendered') {
       storedRenderedHtml = article.innerHTML;
       article.textContent = storedRawText;
@@ -440,6 +441,7 @@ function parseFrontmatter(rawText) {
       article.style.fontSize = '13px';
       toggle.textContent = 'Rendered';
       viewMode = 'raw';
+      if (toc) toc.style.display = 'none';
     } else {
       article.innerHTML = storedRenderedHtml;
       article.style.whiteSpace = '';
@@ -447,6 +449,7 @@ function parseFrontmatter(rawText) {
       article.style.fontSize = '';
       toggle.textContent = 'Raw';
       viewMode = 'rendered';
+      if (toc) toc.style.display = '';
     }
   }
 
@@ -505,6 +508,12 @@ function parseFrontmatter(rawText) {
       // Step 6: lazyload images — reload with proper attributes
       lazyloadImages(article);
 
+      // Step 7: heading anchors — clickable IDs, smooth scroll
+      addHeadingAnchors(article);
+
+      // Step 8: floating TOC navigator
+      buildFloatingTOC(article);
+
       storedRenderedHtml = article.innerHTML;
       document.getElementById('md-status').textContent = '✓ Done';
       log.timeEnd('total:render');
@@ -540,6 +549,137 @@ function parseFrontmatter(rawText) {
     } else {
       log.warn('entry', 'shouldAutoRender=true but empty text');
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HEADING ANCHORS & FLOATING TOC
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function slugify(text) {
+    return text.toLowerCase().trim()
+      .replace(/<[^>]*>/g, '')
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-');
+  }
+
+  function addHeadingAnchors(container) {
+    const headings = container.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    const slugCount = {};
+    let n = 0;
+
+    headings.forEach(h => {
+      let slug = slugify(h.textContent);
+      if (!slug) return;
+      if (slugCount[slug] != null) {
+        slugCount[slug]++;
+        slug = `${slug}-${slugCount[slug]}`;
+      } else {
+        slugCount[slug] = 0;
+      }
+
+      h.id = slug;
+      const anchor = document.createElement('a');
+      anchor.className = 'md-heading-anchor';
+      anchor.href = `#${slug}`;
+      anchor.setAttribute('aria-hidden', 'true');
+      anchor.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M7.775 3.275a.75.75 0 0 0 1.06 1.06l1.25-1.25a2 2 0 1 1 2.83 2.83l-2.5 2.5a2 2 0 0 1-2.83 0 .75.75 0 0 0-1.06 1.06 3.5 3.5 0 0 0 4.95 0l2.5-2.5a3.5 3.5 0 0 0-4.95-4.95l-1.25 1.25zm-.8 9.45a.75.75 0 0 0-1.06-1.06l-1.25 1.25a2 2 0 0 1-2.83-2.83l2.5-2.5a2 2 0 0 1 2.83 0 .75.75 0 0 0 1.06-1.06 3.5 3.5 0 0 0-4.95 0l-2.5 2.5a3.5 3.5 0 0 0 4.95 4.95l1.25-1.25z"/></svg>';
+      anchor.addEventListener('click', e => {
+        e.preventDefault();
+        scrollToHeading(slug);
+        history.replaceState(null, '', `#${slug}`);
+      });
+      h.prepend(anchor);
+      n++;
+    });
+
+    if (n) log.info('anchors', `${n} heading anchor(s) added`);
+
+    // handle initial hash on load
+    if (location.hash) {
+      const targetId = decodeURIComponent(location.hash.slice(1));
+      setTimeout(() => scrollToHeading(targetId), 100);
+    }
+
+    // handle hash link clicks within the document
+    container.addEventListener('click', e => {
+      const link = e.target.closest('a[href^="#"]');
+      if (!link || link.classList.contains('md-heading-anchor')) return;
+      const targetId = decodeURIComponent(link.getAttribute('href').slice(1));
+      const target = document.getElementById(targetId);
+      if (target) {
+        e.preventDefault();
+        scrollToHeading(targetId);
+        history.replaceState(null, '', `#${targetId}`);
+      }
+    });
+  }
+
+  const SOURCE_BAR_HEIGHT = 36;
+
+  function scrollToHeading(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const y = el.getBoundingClientRect().top + window.scrollY - SOURCE_BAR_HEIGHT - 12;
+    window.scrollTo({ top: y, behavior: 'smooth' });
+  }
+
+  function buildFloatingTOC(container) {
+    const headings = container.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    if (headings.length < 2) return null;
+
+    const nav = document.createElement('nav');
+    nav.id = 'md-toc-nav';
+    nav.innerHTML = '<div class="md-toc-title">Contents</div>';
+    const list = document.createElement('ul');
+    list.className = 'md-toc-list';
+
+    headings.forEach(h => {
+      if (!h.id) return;
+      const level = parseInt(h.tagName[1], 10);
+      const li = document.createElement('li');
+      li.className = `md-toc-item md-toc-h${level}`;
+      li.dataset.target = h.id;
+
+      const a = document.createElement('a');
+      a.href = `#${h.id}`;
+      a.textContent = h.textContent;
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        scrollToHeading(h.id);
+        history.replaceState(null, '', `#${h.id}`);
+      });
+      li.appendChild(a);
+      list.appendChild(li);
+    });
+
+    nav.appendChild(list);
+    document.body.appendChild(nav);
+    setupScrollSpy(container, nav);
+    log.info('toc', `floating TOC built with ${list.children.length} item(s)`);
+    return nav;
+  }
+
+  function setupScrollSpy(container, nav) {
+    const headings = container.querySelectorAll('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]');
+    if (headings.length === 0) return;
+
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        const id = entry.target.id;
+        const tocItem = nav.querySelector(`.md-toc-item[data-target="${id}"]`);
+        if (!tocItem) return;
+        if (entry.isIntersecting) {
+          nav.querySelectorAll('.md-toc-item.active').forEach(el => el.classList.remove('active'));
+          tocItem.classList.add('active');
+        }
+      });
+    }, {
+      rootMargin: `-${SOURCE_BAR_HEIGHT + 16}px 0px -60% 0px`,
+      threshold: 0,
+    });
+
+    headings.forEach(h => observer.observe(h));
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -841,6 +981,91 @@ function parseFrontmatter(rawText) {
       .diagram-toolbar button.flash { color: ${link}; border-color: ${link}; }
 
       .task-list-item { list-style: none; margin-left: -20px; }
+
+      /* Heading anchors */
+      .md-heading-anchor {
+        float: left;
+        margin-left: -20px;
+        padding-right: 4px;
+        line-height: 1;
+        color: ${mutedText};
+        opacity: 0;
+        transition: opacity 0.15s;
+        text-decoration: none;
+      }
+      h1:hover .md-heading-anchor,
+      h2:hover .md-heading-anchor,
+      h3:hover .md-heading-anchor,
+      h4:hover .md-heading-anchor,
+      h5:hover .md-heading-anchor,
+      h6:hover .md-heading-anchor,
+      .md-heading-anchor:focus { opacity: 1; }
+      .md-heading-anchor svg { vertical-align: middle; }
+
+      /* Floating TOC navigator */
+      #md-toc-nav {
+        position: fixed;
+        top: ${SOURCE_BAR_HEIGHT + 16}px;
+        right: 16px;
+        max-width: 260px;
+        max-height: calc(100vh - ${SOURCE_BAR_HEIGHT + 32}px);
+        overflow-y: auto;
+        background: ${barBg};
+        border: 1px solid ${border};
+        border-radius: 8px;
+        padding: 12px 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 12px;
+        z-index: 9998;
+        opacity: 0.35;
+        transition: opacity 0.25s ease;
+        scrollbar-width: thin;
+      }
+      #md-toc-nav:hover { opacity: 0.95; }
+
+      .md-toc-title {
+        padding: 0 16px 8px;
+        font-weight: 600;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: ${mutedText};
+        border-bottom: 1px solid ${border};
+        margin-bottom: 4px;
+      }
+
+      .md-toc-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .md-toc-item a {
+        display: block;
+        padding: 3px 16px;
+        color: ${mutedText};
+        text-decoration: none;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        border-left: 2px solid transparent;
+        transition: color 0.15s, border-color 0.15s;
+      }
+      .md-toc-item a:hover { color: ${link}; }
+      .md-toc-item.active a {
+        color: ${link};
+        border-left-color: ${link};
+        font-weight: 500;
+      }
+      .md-toc-h1 a { padding-left: 16px; font-weight: 600; }
+      .md-toc-h2 a { padding-left: 16px; }
+      .md-toc-h3 a { padding-left: 28px; }
+      .md-toc-h4 a { padding-left: 40px; }
+      .md-toc-h5 a { padding-left: 52px; }
+      .md-toc-h6 a { padding-left: 64px; }
+
+      @media (max-width: 1200px) {
+        #md-toc-nav { display: none; }
+      }
 
       ${darkMode ? `pre { background: #161b22 !important; } .hljs { background: #161b22 !important; }` : ''}
     `);
