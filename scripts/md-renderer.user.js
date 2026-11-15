@@ -51,6 +51,7 @@
 (async function () {
   'use strict';
 
+  const SOURCE_BAR_HEIGHT = 36;
   const LOG_PREFIX = '[md-renderer]';
   const log = {
     info:  (stage, msg, ...args) => console.info(`${LOG_PREFIX}[${stage}]`, msg, ...args),
@@ -614,8 +615,6 @@ function parseFrontmatter(rawText) {
       }
     });
   }
-
-  const SOURCE_BAR_HEIGHT = 36;
 
   function scrollToHeading(id) {
     const el = document.getElementById(id);
