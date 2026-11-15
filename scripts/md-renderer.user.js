@@ -16,7 +16,7 @@
 // ==UserScript==
 // @name         Everywhere Markdown Renderer (GitHub-style + Mermaid) | by Zuko
 // @namespace    https://zuko.pro
-// @version      2.6.0
+// @version      2.6.1
 // @description  Render raw .md files in browser — GitHub-style markdown, Mermaid diagrams, syntax highlight, copy buttons. Allow force render via Tampermonkey Context Command
 // @author       Zuko <tansautn@gmail.com>
 // @icon         https://cdn.zuko.pro/assets/z-cricle.png
